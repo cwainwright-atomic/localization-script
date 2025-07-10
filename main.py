@@ -140,6 +140,15 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def collect_language_files(root_directory: Path, exclude: Path | None) -> list[Path]:
+    """Collect all language files in a directory, excluding a specific file."""
+    collected_files: list[Path] = []
+    for path in root_directory.rglob("Localizable.strings"):
+        if path.is_file() and path != exclude:
+            collected_files.append(path)
+    return collected_files
+
+
 def parse(
     filepath: Path, report: ParseReporting = ParseReporting.default()
 ) -> dict[str, tuple[int, str]]:
@@ -148,7 +157,7 @@ def parse(
     Files are expected to contain lines in the format: \"foo\" = \"bar\";"""
     lines: dict[str, tuple[int, str]] = {}
 
-    print(f"Parsing file: {filepath}", file=sys.stderr)
+    print(f"\nParsing file: {filepath}", file=sys.stderr)
 
     with open(filepath, "r", encoding="utf-8") as f:
         pattern = re.compile(r"\"(.*)\" *= *\"(.*)\";")
@@ -199,7 +208,7 @@ def get_missing_declarations(
     If report = True: report any missing declarations."""
 
     print(
-        f"Scanning for missing declarations in file: {comparison_file}",
+        f"\nScanning for missing declarations in file: {comparison_file}",
         file=sys.stderr,
     )
 
@@ -211,10 +220,9 @@ def get_missing_declarations(
     if report.missing_declarations:
         if missing_declarations:
             print(
-                f"Found {len(missing_declarations)} missing declarations in {comparison_file}.",
+                f"Found {len(missing_declarations)} missing declarations",
                 file=sys.stderr,
             )
-            print(f"Missing declarations found in {comparison_file}:", file=sys.stderr)
 
             table = PrettyTable(
                 data=[
@@ -294,12 +302,31 @@ def main() -> None:
     print(f"Parsing base file {base_file}", file=sys.stderr)
     base_parse: dict[str, tuple[int, str]] = parse(base_file, parse_reporting)
 
+    comparison_files: list[Path] = args.comparison_files
+    if not comparison_files:
+        print(
+            "No comparison files provided. Exiting.",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+
+    if len(comparison_files) == 1 and comparison_files[0].is_dir():
+        print(
+            f"Collecting language files from directory: {comparison_files[0]}",
+            file=sys.stderr,
+        )
+        comparison_files = collect_language_files(
+            comparison_files[0], exclude=base_file
+        )
+    else:
+        comparison_files = args.comparison_files
+
     # Dictionary to hold comparison parses
     # Key: filepath (Path object)
     # Value: parse dictionary (see parse function)
     comparison_parses: dict[Path, dict[str, tuple[int, str]]] = {}
-    print("\nParsing comparison files", args.comparison_files, file=sys.stderr)
-    for comparison_file in args.comparison_files:
+    print("\n\nParsing comparison files", comparison_files, file=sys.stderr)
+    for comparison_file in comparison_files:
         comparison_parse: dict[str, tuple[int, str]] = parse(
             comparison_file, parse_reporting
         )
@@ -310,7 +337,7 @@ def main() -> None:
     # Value: list of tuples (key, (line number, value))
     missing_declarations: dict[Path, list[tuple[str, tuple[int, str]]]] = {}
 
-    print("\nChecking for missing declarations", file=sys.stderr)
+    print("\n\nChecking for missing declarations", file=sys.stderr)
     for comparison_file, comparison_parse in comparison_parses.items():
         missing_declarations[comparison_file] = get_missing_declarations(
             base_parse,
